@@ -19,8 +19,15 @@ other formatter/typecheck step.
 
 ## Layout & architecture
 
-- `portable_file_watcher.hpp` — the entire library. Platform backends are chosen
-  by preprocessor inside the header:
+- `portable_file_watcher.hpp` — the entire library, split into two sections:
+  - interface: types, the `PortableFileWatcher` class (member declarations
+    only), and free-function declarations
+  - a gated implementation section (`#ifdef PFW_IMPLEMENTATION`) with the
+    out-of-line definitions, emitted in exactly one translation unit. When you
+    edit a signature, update both sections; when you move a body, keep its
+    NOLINTs. The impl block is wrapped in
+    `NOLINTBEGIN/END(misc-definitions-in-headers)` — keep that range intact.
+  Platform backends are chosen by preprocessor inside the header:
   - `_WIN32` → `ReadDirectoryChangesW` (supports recursive watching)
   - `__linux__` → `inotify`, a single watch on one directory; recursive is **not**
     implemented (no per-subdirectory `inotify_add_watch`)
@@ -28,7 +35,9 @@ other formatter/typecheck step.
     watch (no child filenames, no recursion)
   - anything else → `#error`
 - `portable_file_watcher_tests.cpp` — self-contained tests using a hand-rolled
-  `CHECK` macro and `EventLog` helper; no gtest/Catch2.
+  `CHECK` macro and `EventLog` helper; no gtest/Catch2. It defines
+  `PFW_IMPLEMENTATION` before including the header (the repo's single
+  implementation TU).
 - CI (`.github/workflows/ci.yml`) builds on ubuntu/windows/macos, so platform code
   must compile on all three. Local dev on Linux can only compile the Linux branch.
 

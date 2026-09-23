@@ -26,6 +26,7 @@
 #include <thread>
 #include <vector>
 
+#define PFW_IMPLEMENTATION
 #include "portable_file_watcher.hpp"
 
 namespace fs = std::filesystem;

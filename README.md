@@ -44,17 +44,31 @@ The implementation requires access to the platform's native file notification AP
 
 ## Installation
 
-Copy `portable_file_watcher.hpp` into your project and include it:
+Copy `portable_file_watcher.hpp` into your project and include it.
+
+The header may be included in any number of source files, but the
+implementation is emitted in exactly one translation unit. In **one** of your
+`.cpp` files, define `PFW_IMPLEMENTATION` before including:
+
+```cpp
+#define PFW_IMPLEMENTATION
+#include "portable_file_watcher.hpp"
+```
+
+Every other source file includes the header without the macro:
 
 ```cpp
 #include "portable_file_watcher.hpp"
 ```
 
-Because the implementation is contained in the header, no separate library build or linking step is required.
+Those translation units see declarations only and link against the file that
+defines `PFW_IMPLEMENTATION`. Defining it in more than one translation unit is
+a link error. No separate library build or linking step is required.
 
 ## Basic usage
 
 ```cpp
+#define PFW_IMPLEMENTATION
 #include "portable_file_watcher.hpp"
 
 #include <iostream>
