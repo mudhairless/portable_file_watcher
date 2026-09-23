@@ -23,7 +23,7 @@ jobs:
 
         steps:
             - name: Check out repository
-              uses: actions/checkout@v4
+              uses: actions/checkout@v7
 
             # Install clang-tidy on Ubuntu
             - name: Install clang-tidy on Ubuntu
@@ -55,13 +55,7 @@ jobs:
                   clang-tidy --version
 
             - name: Configure CMake
-              run: |
-                  cmake \
-                    -S . \
-                    -B build \
-                    -DCMAKE_BUILD_TYPE=Debug \
-                    -DCMAKE_CXX_STANDARD=17 \
-                    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+              run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=17 -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
             - name: Build
               run: cmake --build build --config Debug --parallel
@@ -70,9 +64,4 @@ jobs:
               run: ctest --test-dir build --build-config Debug --output-on-failure --parallel 2
 
             - name: Run clang-tidy
-              run: |
-                  clang-tidy \
-                    -p build \
-                    portable_file_watcher_tests.hpp \
-                    portable_file_watcher_tests.cpp \
-                    --warnings-as-errors='*'
+              run: clang-tidy -p build portable_file_watcher_tests.cpp --warnings-as-errors="*"
