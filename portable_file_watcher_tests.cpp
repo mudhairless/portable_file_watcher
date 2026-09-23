@@ -268,7 +268,7 @@ void test_recursive_directory_watch() {
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
 #else
   CHECK(log.wait_for([&](const auto &) {
-    return log.contains_event(nested_file, pfw::Event::Created);
+    return log.contains_event(nested_file, pfw::WatchedFileEvent::Created);
   }));
 #endif
 
