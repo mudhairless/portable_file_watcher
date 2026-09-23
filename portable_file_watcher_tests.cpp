@@ -12,14 +12,18 @@
 */
 
 #include <algorithm>
+#include <bits/chrono.h>
 #include <chrono>
 #include <condition_variable>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <mutex>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <vector>
 
@@ -51,7 +55,7 @@ private:
 public:
   void add(const pfw::Notification &notification) {
     {
-      std::lock_guard<std::mutex> lock(mutex);
+      const std::lock_guard<std::mutex> lock(mutex);
       notifications.push_back(notification);
     }
     condition.notify_all();
@@ -88,7 +92,7 @@ public:
 
   bool contains_event(const fs::path &path, pfw::WatchedFileEvent expected,
                       bool exact_path = true) const {
-    std::lock_guard<std::mutex> lock(mutex);
+    const std::lock_guard<std::mutex> lock(mutex);
     return contains_event(notifications, path, expected, exact_path);
   }
 };
@@ -150,7 +154,7 @@ void test_invalid_arguments() {
 }
 
 void test_file_lifecycle() {
-  TemporaryDirectory temporary_directory;
+  const TemporaryDirectory temporary_directory;
   const fs::path &directory = temporary_directory.path();
 
   EventLog log;
@@ -201,7 +205,7 @@ void test_file_lifecycle() {
 }
 
 void test_single_file_filtering() {
-  TemporaryDirectory temporary_directory;
+  const TemporaryDirectory temporary_directory;
   const fs::path &directory = temporary_directory.path();
 
   const fs::path watched_file = directory / "watched.txt";
@@ -236,7 +240,7 @@ void test_single_file_filtering() {
 }
 
 void test_recursive_directory_watch() {
-  TemporaryDirectory temporary_directory;
+  const TemporaryDirectory temporary_directory;
   const fs::path &root = temporary_directory.path();
   const fs::path nested = root / "nested";
 
@@ -255,7 +259,7 @@ void test_recursive_directory_watch() {
   const fs::path nested_file = nested / "nested.txt";
   write_file(nested_file, "nested content");
 
-#if defined(__linux__)
+#ifdef __linux__
   // The current header implementation does not add inotify watches for
   // newly-created subdirectories, so Linux recursive behavior is not
   // asserted here. The test still verifies that starting a recursive watch
@@ -271,7 +275,7 @@ void test_recursive_directory_watch() {
 }
 
 void test_start_stop_repeatedly() {
-  TemporaryDirectory temporary_directory;
+  const TemporaryDirectory temporary_directory;
   const fs::path &directory = temporary_directory.path();
 
   // NOLINTNEXTLINE(readability-magic-numbers)

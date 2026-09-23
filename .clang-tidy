@@ -15,3 +15,6 @@ WarningsAsErrors: >
     portability-*,
     readability-*,
     misc-*,
+
+HeaderFilterRegex: '.*portable_file_watcher\.hpp'
+SystemHeaders: false

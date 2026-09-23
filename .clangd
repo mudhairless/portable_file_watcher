@@ -1,0 +1,9 @@
+CompileFlags:
+  CompilationDatabase: build
+
+Diagnostics:
+  ClangTidy:
+    Add: []
+    Remove: []
+
+  UnusedIncludes: Strict

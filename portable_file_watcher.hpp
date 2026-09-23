@@ -20,10 +20,12 @@
  * SOFTWARE.
  *
  */
+// NOLINTNEXTLINE(portability-avoid-pragma-once)
 #pragma once
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -31,7 +33,7 @@
 #include <thread>
 #include <vector>
 
-#if defined(_WIN32)
+#ifdef _WIN32
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -82,30 +84,30 @@ inline constexpr int version_patch = 0;
 
 inline constexpr char version_string[] = "1.0.0";
 inline constexpr int version =
-    version_major * 10000 + version_minor * 100 + version_patch;
+    (version_major * 10000) + (version_minor * 100) + version_patch;
 
-enum class WatchedFileEvent : std::uint32_t {
+enum class WatchedFileEvent : std::uint8_t {
   None = 0,
-  Created = 1u << 0,
-  Modified = 1u << 1,
-  Removed = 1u << 2,
-  Renamed = 1u << 3,
-  Overflow = 1u << 4,
-  Error = 1u << 5
+  Created = 1U << 0,
+  Modified = 1U << 1,
+  Removed = 1U << 2,
+  Renamed = 1U << 3,
+  Overflow = 1U << 4,
+  Error = 1U << 5
 };
 
-inline WatchedFileEvent operator|(WatchedFileEvent a, WatchedFileEvent b) {
-  return static_cast<WatchedFileEvent>(static_cast<std::uint32_t>(a) |
-                                       static_cast<std::uint32_t>(b));
+inline WatchedFileEvent operator|(WatchedFileEvent lhs, WatchedFileEvent rhs) {
+  return static_cast<WatchedFileEvent>(static_cast<std::uint32_t>(lhs) |
+                                       static_cast<std::uint32_t>(rhs));
 }
 
-inline WatchedFileEvent operator&(WatchedFileEvent a, WatchedFileEvent b) {
-  return static_cast<WatchedFileEvent>(static_cast<std::uint32_t>(a) &
-                                       static_cast<std::uint32_t>(b));
+inline WatchedFileEvent operator&(WatchedFileEvent lhs, WatchedFileEvent rhs) {
+  return static_cast<WatchedFileEvent>(static_cast<std::uint32_t>(lhs) &
+                                       static_cast<std::uint32_t>(rhs));
 }
 
-inline bool any(WatchedFileEvent e) {
-  return static_cast<std::uint32_t>(e) != 0;
+inline bool any(WatchedFileEvent event) {
+  return static_cast<std::uint32_t>(event) != 0;
 }
 
 struct Notification {
@@ -142,7 +144,7 @@ public:
     recursive_ = recursive;
     stopping_ = false;
 
-#if defined(_WIN32)
+#ifdef _WIN32
     return start_windows();
 #elif defined(__linux__)
     return start_linux();
@@ -154,7 +156,7 @@ public:
   void stop() {
     stopping_ = true;
 
-#if defined(_WIN32)
+#ifdef _WIN32
     if (directory_handle_ != INVALID_HANDLE_VALUE) {
       CancelIoEx(directory_handle_, nullptr);
     }
@@ -179,7 +181,7 @@ public:
       worker_.join();
     }
 
-#if defined(_WIN32)
+#ifdef _WIN32
     if (directory_handle_ != INVALID_HANDLE_VALUE) {
       ::CloseHandle(directory_handle_);
       directory_handle_ = INVALID_HANDLE_VALUE;
@@ -196,7 +198,7 @@ private:
   std::atomic<bool> stopping_{false};
   std::thread worker_;
 
-#if defined(_WIN32)
+#ifdef _WIN32
 
   HANDLE directory_handle_ = INVALID_HANDLE_VALUE;
 
@@ -297,8 +299,9 @@ private:
   int inotify_fd_ = -1;
   int watch_descriptor_ = -1;
 
+  // NOLINTNEXTLINE(readability-function-cognitive-complexity)
   bool start_linux() {
-    std::filesystem::path directory =
+    const std::filesystem::path directory =
         std::filesystem::is_directory(path_) ? path_ : path_.parent_path();
 
     inotify_fd_ = ::inotify_init1(IN_NONBLOCK);
@@ -321,14 +324,18 @@ private:
 
     path_ = std::filesystem::absolute(path_);
 
+    // NOLINTNEXTLINE(readability-function-cognitive-complexity)
     worker_ = std::thread([this, directory] {
-      std::vector<char> buffer(64 * 1024);
+      // NOLINTNEXTLINE(readability-magic-numbers)
+      std::vector<char> buffer(static_cast<size_t>(64 * 1024));
 
       while (!stopping_) {
-        const int n = ::read(inotify_fd_, buffer.data(), buffer.size());
+        const ssize_t nbytes =
+            ::read(inotify_fd_, buffer.data(), buffer.size());
 
-        if (n < 0) {
+        if (nbytes < 0) {
           if (errno == EAGAIN || errno == EINTR) {
+            // NOLINTNEXTLINE(readability-magic-numbers)
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
             continue;
           }
@@ -339,10 +346,10 @@ private:
           break;
         }
 
-        int offset = 0;
+        unsigned int offset = 0;
 
-        while (offset < n) {
-          auto *event =
+        while (offset < nbytes) {
+          const auto *event =
               reinterpret_cast<const inotify_event *>(buffer.data() + offset);
 
           if (event->mask & IN_Q_OVERFLOW) {
@@ -479,14 +486,14 @@ private:
     Callback callback;
 
     {
-      std::lock_guard<std::mutex> lock(callback_mutex_);
+      const std::lock_guard<std::mutex> lock(callback_mutex_);
       callback = callback_;
     }
 
     if (callback && !stopping_) {
       try {
         callback(Notification{changed, event});
-      } catch (...) {
+      } catch (...) { // NOLINT(bugprone-empty-catch)
         // Exceptions must not escape the watcher thread.
       }
     }
