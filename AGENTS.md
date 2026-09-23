@@ -72,3 +72,10 @@ other formatter/typecheck step.
 - The header defines `NOMINMAX` before `#include <windows.h>`; keep it so the
   single header stays safe to include anywhere.
 - `build/` is ignored; `.cache/` is a local clangd index, not tracked.
+- On Windows, `start()` blocks until the worker's first (overlapped)
+  `ReadDirectoryChangesW` is queued — `ReadDirectoryChangesW` only reports changes
+  that occur after its first call, so without that handshake events immediately
+  following `start()` are lost. Keep the no-read-in-flight-on-exit invariant when
+  editing the worker loop: every exit path must have finished waiting on the
+  pending read (`GetOverlappedResult`) before the buffer/completion event are
+  destroyed.

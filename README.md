@@ -298,6 +298,8 @@ The callback is copied while protected by an internal mutex. Exceptions thrown b
 - File events are filtered when watching a specific file.
 - Recursive directory watching is supported through `ReadDirectoryChangesW`.
 - A notification may be generated for a temporary file used by an editor during an atomic save.
+- `start()` does not return until the watcher's first change-read is queued, so
+  changes made immediately after `start()` returns are not missed.
 
 ### Linux
 
