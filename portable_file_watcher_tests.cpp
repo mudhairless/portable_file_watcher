@@ -79,7 +79,10 @@ public:
     std::unique_lock<std::mutex> lock(mutex);
 
     return condition.wait_for(lock, timeout, [&] {
-      // The predicate is called while mutex is held.
+      // The predicate is called while mutex is held. It must not lock
+      // `mutex` again (MSVC std::mutex::lock throws
+      // resource_deadlock_would_occur on own-thread re-entry), so use the
+      // static EventLog::contains_event overload here, not the const member.
       return predicate(notifications);
     });
   }
@@ -312,8 +315,9 @@ void test_recursive_directory_watch() {
 #ifdef _WIN32
   // ReadDirectoryChangesW supports recursive reporting of nested child
   // filenames.
-  CHECK(log.wait_for([&](const auto &) {
-    return log.contains_event(nested_file, pfw::WatchedFileEvent::Created);
+  CHECK(log.wait_for([&](const auto &events) {
+    return EventLog::contains_event(events, nested_file,
+                                    pfw::WatchedFileEvent::Created);
   }));
 #else
   // Neither Linux (inotify) nor macOS/BSD (kqueue) adds watches beneath the
