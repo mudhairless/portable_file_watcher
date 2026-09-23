@@ -1,0 +1,137 @@
+name: Bug report
+description: Report a problem with portable_file_watcher so it can be reproduced and fixed.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report. Please answer the
+        questions below — the platform and watch configuration matter a lot,
+        because the library intentionally behaves differently on each backend
+        (see the comments at the top of `portable_file_watcher.hpp`).
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened, and what did you expect?
+      description: >-
+        Describe the bug plainly. Include exactly which events you received
+        (Created / Modified / Removed / Renamed / Overflow / Error) versus the
+        ones you expected.
+      placeholder: |
+        Started a watch on /tmp/myfile.txt, wrote to it, and got no callback.
+        Expected a Modified notification.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform backend
+      description: >-
+        Which backend were you running on? Each backend is a different code
+        path with different capabilities (recursive watching, child filenames,
+        etc.).
+      options:
+        - Windows (ReadDirectoryChangesW)
+        - Linux (inotify)
+        - macOS (kqueue)
+        - FreeBSD / OpenBSD / NetBSD (kqueue)
+        - Not sure / other
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+      description: e.g. Windows 11 23H2, Ubuntu 24.04, macOS 15 Sequoia, FreeBSD 14
+      placeholder: Ubuntu 24.04
+
+  - type: input
+    id: compiler
+    attributes:
+      label: Compiler and version
+      description: e.g. GCC 13.2, Clang 18, MSVC 19.40 (Visual Studio 2022)
+      placeholder: GCC 13.2
+
+  - type: dropdown
+    id: cpp-standard
+    attributes:
+      label: C++ standard used to build
+      description: The library requires C++17 or newer.
+      options:
+        - C++17
+        - C++20
+        - C++23
+        - Older than C++17
+        - Not sure
+
+  - type: dropdown
+    id: usage
+    attributes:
+      label: How are you using the library?
+      options:
+        - Embedding the single header in my own project
+        - Building and running the repository's test suite
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: watch-config
+    attributes:
+      label: What were you watching?
+      description: >-
+        Behaviors differ: Linux and kqueue have limited recursive support, and
+        single-file watches are filtered after the fact.
+      options:
+        - A single file (start(path_to_file, callback))
+        - A directory, non-recursive (start(path_to_dir, callback))
+        - A directory tree, recursive (start(path_to_dir, callback, true))
+        - Multiple watchers / another setup (explain below)
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: >-
+        A minimal, self-contained code snippet and the exact steps to reproduce.
+        Where possible, test against the current commit on `main` and the
+        repository's own test suite before reporting.
+      placeholder: |
+        #include "portable_file_watcher.hpp"
+
+        int main() {
+          pfw::PortableFileWatcher watcher;
+          watcher.start("/tmp/watched.txt",
+            [](const pfw::Notification &n) { /* ... */ });
+          // steps: ...
+        }
+      render: cpp
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: >-
+        Anything that helps: which editor or process performed the file change
+        (editors often save via rename/delete and can deliver multiple events),
+        whether the path is on a network or virtual filesystem, log output, etc.
+      placeholder: |
+        Reproduced with VS Code auto-save on a Samba-mounted directory.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched the existing issues and this is not a duplicate.
+          required: true
+        - label: I reproduced this against the latest commit on `main`.
+          required: false
