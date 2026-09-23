@@ -54,14 +54,23 @@ jobs:
                   cmake --version
                   clang-tidy --version
 
+            # Ninja emits compile_commands.json on every platform, which
+            # clang-tidy needs; the Visual Studio generator does not produce a
+            # database clang-tidy can load. On Windows, set up the MSVC
+            # environment first so CMake's Ninja generator picks cl instead of
+            # the MinGW gcc that ships with the runner image.
+            - name: Set up MSVC environment
+              if: runner.os == 'Windows'
+              uses: ilammy/msvc-dev-cmd@v1
+
             - name: Configure CMake
-              run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=17 -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+              run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=17 -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
             - name: Build
-              run: cmake --build build --config Debug --parallel
+              run: cmake --build build --parallel
 
             - name: Run tests
-              run: ctest --test-dir build --build-config Debug --output-on-failure --parallel 2
+              run: ctest --test-dir build --output-on-failure --parallel 2
 
             - name: Run clang-tidy
               run: clang-tidy -p build portable_file_watcher_tests.cpp

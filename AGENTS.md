@@ -55,6 +55,14 @@ other formatter/typecheck step.
 - Tests are event-driven and timing-sensitive: 5s `condition_variable` waits plus
   a `300ms` sleep for negative assertions. Re-run instead of assuming breakage;
   slow machines can be flaky.
+- clang-tidy needs a real compilation database or it runs without flags and
+  cascades hundreds of false positives (it defaulted to pre-C++17 in the
+  Windows CI log: every `std::filesystem` use became an error and even
+  correct code got "can be declared const"). CI therefore configures every OS
+  with `-G Ninja` and `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` — the Visual Studio
+  generator emits no database clang-tidy can load — and activates the MSVC
+  environment (`ilammy/msvc-dev-cmd`) on Windows first so CMake picks `cl`
+  rather than the MinGW gcc shipped on the runner image.
 - `.clang-tidy` enables nearly all check groups with `WarningsAsErrors`, and
   `HeaderFilterRegex` means the header is analyzed too. Suppressions follow the
   `// NOLINTNEXTLINE(...)` convention already used throughout — match it.

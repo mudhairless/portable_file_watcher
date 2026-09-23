@@ -133,7 +133,8 @@ public:
   PortableFileWatcher() = default;
 
   explicit PortableFileWatcher(const std::filesystem::path &path,
-                               Callback callback, bool recursive = false);
+                               const Callback &callback,
+                               bool recursive = false);
 
   ~PortableFileWatcher();
 
@@ -158,7 +159,7 @@ private:
 
   HANDLE directory_handle_ = INVALID_HANDLE_VALUE;
 
-  static std::wstring wide(const std::filesystem::path &p);
+  static std::wstring wide(const std::filesystem::path &path);
 
   bool start_windows();
 
@@ -253,8 +254,9 @@ bool any(WatchedFileEvent event) {
 }
 
 PortableFileWatcher::PortableFileWatcher(const std::filesystem::path &path,
-                                         Callback callback, bool recursive) {
-  start(path, std::move(callback), recursive);
+                                         const Callback &callback,
+                                         bool recursive) {
+  start(path, callback, recursive);
 }
 
 PortableFileWatcher::~PortableFileWatcher() { stop(); }
@@ -323,12 +325,13 @@ bool PortableFileWatcher::running() const {
 
 #ifdef _WIN32
 
-std::wstring PortableFileWatcher::wide(const std::filesystem::path &p) {
-  return p.wstring();
+std::wstring PortableFileWatcher::wide(const std::filesystem::path &path) {
+  return path.wstring();
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 bool PortableFileWatcher::start_windows() {
-  std::filesystem::path directory =
+  const std::filesystem::path directory =
       std::filesystem::is_directory(path_) ? path_ : path_.parent_path();
 
   directory_handle_ =
@@ -423,8 +426,8 @@ bool PortableFileWatcher::start_windows() {
             reinterpret_cast<FILE_NOTIFY_INFORMATION *>(buffer.data());
 
         for (;;) {
-          std::wstring name(record->FileName,
-                            record->FileNameLength / sizeof(wchar_t));
+          const std::wstring name(record->FileName,
+                                  record->FileNameLength / sizeof(wchar_t));
 
           auto changed = directory / name;
           changed = std::filesystem::absolute(changed);
@@ -444,6 +447,10 @@ bool PortableFileWatcher::start_windows() {
           case FILE_ACTION_RENAMED_OLD_NAME:
           case FILE_ACTION_RENAMED_NEW_NAME:
             event = WatchedFileEvent::Renamed;
+            break;
+          default:
+            // Unrecognized action; leave the event as None so the
+            // any(event) check below filters it out.
             break;
           }
 
@@ -589,8 +596,9 @@ bool PortableFileWatcher::start_linux() {
 
 #else
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 bool PortableFileWatcher::start_kqueue() {
-#if defined(__APPLE__)
+#ifdef __APPLE__
   watched_fd_ = ::open(path_.c_str(), O_EVTONLY);
 #else
   watched_fd_ = ::open(path_.c_str(), O_RDONLY);
@@ -625,11 +633,12 @@ bool PortableFileWatcher::start_kqueue() {
   worker_ = std::thread([this] {
     while (!stopping_) {
       struct kevent event;
-      timespec timeout{1, 0};
+      const timespec timeout{1, 0};
 
-      int n = ::kevent(kqueue_fd_, nullptr, 0, &event, 1, &timeout);
+      const int num_events =
+          ::kevent(kqueue_fd_, nullptr, 0, &event, 1, &timeout);
 
-      if (n < 0) {
+      if (num_events < 0) {
         if (errno == EINTR) {
           continue;
         }
@@ -640,27 +649,27 @@ bool PortableFileWatcher::start_kqueue() {
         break;
       }
 
-      if (n == 0) {
+      if (num_events == 0) {
         continue;
       }
 
       WatchedFileEvent result = WatchedFileEvent::Modified;
 
-      if (event.fflags & NOTE_DELETE) {
+      if ((event.fflags & NOTE_DELETE) != 0) {
         result = result | WatchedFileEvent::Removed;
       }
 
-      if (event.fflags & NOTE_RENAME) {
+      if ((event.fflags & NOTE_RENAME) != 0) {
         result = result | WatchedFileEvent::Renamed;
       }
 
-      if (event.fflags & NOTE_ATTRIB) {
+      if ((event.fflags & NOTE_ATTRIB) != 0) {
         result = result | WatchedFileEvent::Modified;
       }
 
       emit(path_, result);
 
-      if (event.fflags & (NOTE_DELETE | NOTE_RENAME)) {
+      if ((event.fflags & (NOTE_DELETE | NOTE_RENAME)) != 0) {
         break;
       }
     }
