@@ -29,7 +29,6 @@
 #include "portable_file_watcher.hpp"
 
 namespace fs = std::filesystem;
-using namespace std::chrono_literals;
 
 namespace {
 
@@ -225,7 +224,8 @@ void test_single_file_filtering() {
 
   // Give the watcher a chance to process the unrelated event. It should
   // not be reported because the watcher was given a specific file.
-  std::this_thread::sleep_for(300ms);
+  // NOLINTNEXTLINE(readability-magic-numbers)
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
   CHECK(!log.contains_event(unrelated_file, pfw::WatchedFileEvent::Modified));
 
@@ -264,7 +264,8 @@ void test_recursive_directory_watch() {
   // newly-created subdirectories, so Linux recursive behavior is not
   // asserted here. The test still verifies that starting a recursive watch
   // is accepted and remains functional.
-  std::this_thread::sleep_for(300ms);
+  // NOLINTNEXTLINE(readability-magic-numbers)
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
 #else
   CHECK(log.wait_for([&](const auto &) {
     return log.contains_event(nested_file, pfw::Event::Created);

@@ -309,9 +309,9 @@ private:
       return false;
     }
 
-    std::uint32_t mask = IN_CREATE | IN_DELETE | IN_MODIFY | IN_CLOSE_WRITE |
-                         IN_MOVED_FROM | IN_MOVED_TO | IN_ATTRIB |
-                         IN_DELETE_SELF | IN_MOVE_SELF | IN_Q_OVERFLOW;
+    const std::uint32_t mask =
+        IN_CREATE | IN_DELETE | IN_MODIFY | IN_CLOSE_WRITE | IN_MOVED_FROM |
+        IN_MOVED_TO | IN_ATTRIB | IN_DELETE_SELF | IN_MOVE_SELF | IN_Q_OVERFLOW;
 
     watch_descriptor_ =
         ::inotify_add_watch(inotify_fd_, directory.c_str(), mask);
@@ -352,7 +352,7 @@ private:
           const auto *event =
               reinterpret_cast<const inotify_event *>(buffer.data() + offset);
 
-          if (event->mask & IN_Q_OVERFLOW) {
+          if ((event->mask & IN_Q_OVERFLOW) != 0) {
             emit(path_, WatchedFileEvent::Overflow);
           } else {
             std::filesystem::path changed = directory;
@@ -365,19 +365,19 @@ private:
 
             WatchedFileEvent result = WatchedFileEvent::None;
 
-            if (event->mask & (IN_CREATE | IN_MOVED_TO)) {
+            if ((event->mask & (IN_CREATE | IN_MOVED_TO)) != 0) {
               result = result | WatchedFileEvent::Created;
             }
 
-            if (event->mask & (IN_MODIFY | IN_CLOSE_WRITE | IN_ATTRIB)) {
+            if ((event->mask & (IN_MODIFY | IN_CLOSE_WRITE | IN_ATTRIB)) != 0) {
               result = result | WatchedFileEvent::Modified;
             }
 
-            if (event->mask & (IN_DELETE | IN_DELETE_SELF)) {
+            if ((event->mask & (IN_DELETE | IN_DELETE_SELF)) != 0) {
               result = result | WatchedFileEvent::Removed;
             }
 
-            if (event->mask & (IN_MOVED_FROM | IN_MOVE_SELF)) {
+            if ((event->mask & (IN_MOVED_FROM | IN_MOVE_SELF)) != 0) {
               result = result | WatchedFileEvent::Renamed;
             }
 
