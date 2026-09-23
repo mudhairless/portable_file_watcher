@@ -331,10 +331,11 @@ bool PortableFileWatcher::start_windows() {
   std::filesystem::path directory =
       std::filesystem::is_directory(path_) ? path_ : path_.parent_path();
 
-  directory_handle_ = ::CreateFileW(
-      wide(directory).c_str(), FILE_LIST_DIRECTORY,
-      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-      OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+  directory_handle_ =
+      ::CreateFileW(wide(directory).c_str(), FILE_LIST_DIRECTORY,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                    nullptr, OPEN_EXISTING,
+                    FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, nullptr);
 
   if (directory_handle_ == INVALID_HANDLE_VALUE) {
     return false;
@@ -347,7 +348,11 @@ bool PortableFileWatcher::start_windows() {
   // otherwise a caller that mutates the tree immediately after start() loses
   // those events to the thread-startup race. The first read therefore uses
   // overlapped I/O, which is queued (not blocked on a change) so the worker
-  // can signal readiness, and start() waits for that signal.
+  // can signal readiness, and start() waits for that signal. Overlapped reads
+  // require the handle to be opened with FILE_FLAG_OVERLAPPED (see
+  // CreateFileW above): without it ReadDirectoryChangesW ignores the
+  // OVERLAPPED structure and blocks until a change occurs, deadlocking
+  // start().
   std::promise<bool> ready;
   std::future<bool> ready_future = ready.get_future();
 
