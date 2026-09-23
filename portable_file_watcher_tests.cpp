@@ -32,6 +32,17 @@ namespace fs = std::filesystem;
 
 namespace {
 
+// Which directory-watch events the platform backend can report. Windows
+// (ReadDirectoryChangesW) and Linux (inotify) report the child filename with a
+// distinct event kind. macOS/BSD (kqueue) reports only that the watched vnode
+// changed: no child filenames, and content-only rewrites of children are not
+// observed when the directory itself is the watched path.
+#if defined(_WIN32) || defined(__linux__)
+inline constexpr bool reports_child_events = true;
+#else
+inline constexpr bool reports_child_events = false;
+#endif
+
 struct TestFailure {
   std::string message;
 };
@@ -152,6 +163,7 @@ void test_invalid_arguments() {
   CHECK(!watcher.start("some-path", {}));
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void test_file_lifecycle() {
   const TemporaryDirectory temporary_directory;
   const fs::path &directory = temporary_directory.path();
@@ -167,38 +179,75 @@ void test_file_lifecycle() {
   const fs::path original = directory / "original.txt";
   const fs::path renamed = directory / "renamed.txt";
 
+  // kqueue assertions count directory-wide Modified events so each step below
+  // must produce a new notification instead of satisfying the check with an
+  // earlier one. The lambda is unused where the backend reports child events.
+  [[maybe_unused]] const auto directory_modifications =
+      [&directory](const auto &events) {
+        return std::count_if(events.begin(), events.end(), [&](const auto &n) {
+          return n.path == directory &&
+                 pfw::any(n.event & pfw::WatchedFileEvent::Modified);
+        });
+      };
+
   write_file(original, "first version");
 
-  CHECK(log.wait_for([&](const auto &events) {
-    return EventLog::contains_event(events, original,
-                                    pfw::WatchedFileEvent::Created);
-  }));
+  if constexpr (reports_child_events) {
+    // ReadDirectoryChangesW and inotify report the new child filename.
+    CHECK(log.wait_for([&](const auto &events) {
+      return EventLog::contains_event(events, original,
+                                      pfw::WatchedFileEvent::Created);
+    }));
+  } else {
+    // kqueue reports only that the watched directory vnode changed, so a
+    // created child surfaces as a Modified event on the directory itself.
+    CHECK(log.wait_for([&](const auto &events) {
+      return directory_modifications(events) >= 1;
+    }));
+  }
 
   write_file(original, "second version");
 
-  CHECK(log.wait_for([&](const auto &events) {
-    return EventLog::contains_event(events, original,
-                                    pfw::WatchedFileEvent::Modified);
-  }));
+  if constexpr (reports_child_events) {
+    CHECK(log.wait_for([&](const auto &events) {
+      return EventLog::contains_event(events, original,
+                                      pfw::WatchedFileEvent::Modified);
+    }));
+  }
+  // kqueue: rewriting a child's contents touches the child vnode, not the
+  // directory, so there is nothing to assert for this step.
 
   std::error_code error;
   fs::rename(original, renamed, error);
   CHECK(!error);
 
-  CHECK(log.wait_for([&](const auto &events) {
-    return EventLog::contains_event(events, original,
-                                    pfw::WatchedFileEvent::Renamed) ||
-           EventLog::contains_event(events, renamed,
-                                    pfw::WatchedFileEvent::Renamed);
-  }));
+  if constexpr (reports_child_events) {
+    CHECK(log.wait_for([&](const auto &events) {
+      return EventLog::contains_event(events, original,
+                                      pfw::WatchedFileEvent::Renamed) ||
+             EventLog::contains_event(events, renamed,
+                                      pfw::WatchedFileEvent::Renamed);
+    }));
+  } else {
+    CHECK(log.wait_for([&](const auto &events) {
+      return directory_modifications(events) >= 2;
+    }));
+  }
 
   fs::remove(renamed, error);
   CHECK(!error);
 
-  CHECK(log.wait_for([&](const auto &events) {
-    return EventLog::contains_event(events, renamed,
-                                    pfw::WatchedFileEvent::Removed);
-  }));
+  if constexpr (reports_child_events) {
+    CHECK(log.wait_for([&](const auto &events) {
+      return EventLog::contains_event(events, renamed,
+                                      pfw::WatchedFileEvent::Removed);
+    }));
+  } else {
+    // NOLINTNEXTLINE(readability-magic-numbers)
+    CHECK(log.wait_for([&](const auto &events) {
+      return directory_modifications(events) >= 3;
+    }));
+  }
 
   watcher.stop();
 }
@@ -259,22 +308,25 @@ void test_recursive_directory_watch() {
   const fs::path nested_file = nested / "nested.txt";
   write_file(nested_file, "nested content");
 
-#ifdef __linux__
-  // The current header implementation does not add inotify watches for
-  // newly-created subdirectories, so Linux recursive behavior is not
-  // asserted here. The test still verifies that starting a recursive watch
-  // is accepted and remains functional.
-  // NOLINTNEXTLINE(readability-magic-numbers)
-  std::this_thread::sleep_for(std::chrono::milliseconds(300));
-#else
+#ifdef _WIN32
+  // ReadDirectoryChangesW supports recursive reporting of nested child
+  // filenames.
   CHECK(log.wait_for([&](const auto &) {
     return log.contains_event(nested_file, pfw::WatchedFileEvent::Created);
   }));
+#else
+  // Neither Linux (inotify) nor macOS/BSD (kqueue) adds watches beneath the
+  // root directory, so recursive delivery is deliberately not asserted here.
+  // The test still verifies that starting a recursive watch is accepted and
+  // remains functional.
+  // NOLINTNEXTLINE(readability-magic-numbers)
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
 #endif
 
   watcher.stop();
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void test_start_stop_repeatedly() {
   const TemporaryDirectory temporary_directory;
   const fs::path &directory = temporary_directory.path();
@@ -293,10 +345,19 @@ void test_start_stop_repeatedly() {
 
     write_file(file, "contents");
 
-    CHECK(log.wait_for([&](const auto &events) {
-      return EventLog::contains_event(events, file,
-                                      pfw::WatchedFileEvent::Created);
-    }));
+    if constexpr (reports_child_events) {
+      CHECK(log.wait_for([&](const auto &events) {
+        return EventLog::contains_event(events, file,
+                                        pfw::WatchedFileEvent::Created);
+      }));
+    } else {
+      // kqueue: the created file surfaces as a Modified event on the watched
+      // directory rather than a Created event naming the child.
+      CHECK(log.wait_for([&](const auto &events) {
+        return EventLog::contains_event(events, directory,
+                                        pfw::WatchedFileEvent::Modified);
+      }));
+    }
 
     watcher.stop();
     CHECK(!watcher.running());

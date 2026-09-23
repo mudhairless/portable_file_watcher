@@ -38,8 +38,11 @@ other formatter/typecheck step.
   and the comment block at the top of the header are authoritative; when docs and
   header drift (e.g. `WatchedFileEvent` is `uint8_t` in code, `uint32_t` in the
   README), trust the header.
-- The recursive-watch test asserts recursive delivery only on non-Linux; Linux
-  recursion is deliberately unasserted.
+- The recursive-watch test asserts recursive delivery only on Windows; Linux
+  (inotify) and macOS/BSD (kqueue) recursion is deliberately unasserted.
+  `file_lifecycle` and `start_stop_repeatedly` assert child-filename events
+  (Created/Modified/Renamed/Removed) only where the backend can report them —
+  on kqueue they assert directory-level `Modified` events instead.
 - Tests are event-driven and timing-sensitive: 5s `condition_variable` waits plus
   a `300ms` sleep for negative assertions. Re-run instead of assuming breakage;
   slow machines can be flaky.
