@@ -1,0 +1,16 @@
+---
+# clang-format configuration for this repo: the LLVM standard.
+#
+# `BasedOnStyle: LLVM` pins clang-format's built-in default style, so every
+# option resolves to the LLVM defaults, notably:
+#   - IndentWidth: 2 (one indentation level = two spaces)
+#   - ColumnLimit: 80
+#   - BreakBeforeBraces: Attach (braces share the line of the if/for/while/
+#     function header)
+#   - PointerAlignment: Right, SortIncludes: true
+#
+# Contract: any supported C++ file in this repo (src/, tests/) must be
+# clang-format clean. Verify before a milestone with:
+#   clang-format --dry-run --Werror src/*.cpp src/*.h tests/*.cpp
+# See also `clang-format --dump-config --style=LLVM` for the full expansion.
+BasedOnStyle: LLVM
