@@ -238,7 +238,7 @@ private:
 
         if (!ok) {
           if (!stopping_) {
-            emit(path_, Event::Error);
+            emit(path_, WatchedFileEvent::Error);
           }
           break;
         }
@@ -257,21 +257,21 @@ private:
           auto changed = directory / name;
           changed = std::filesystem::absolute(changed);
 
-          Event event = Event::None;
+          WatchedFileEvent event = WatchedFileEvent::None;
 
           switch (record->Action) {
           case FILE_ACTION_ADDED:
-            event = Event::Created;
+            event = WatchedFileEvent::Created;
             break;
           case FILE_ACTION_REMOVED:
-            event = Event::Removed;
+            event = WatchedFileEvent::Removed;
             break;
           case FILE_ACTION_MODIFIED:
-            event = Event::Modified;
+            event = WatchedFileEvent::Modified;
             break;
           case FILE_ACTION_RENAMED_OLD_NAME:
           case FILE_ACTION_RENAMED_NEW_NAME:
-            event = Event::Renamed;
+            event = WatchedFileEvent::Renamed;
             break;
           }
 
@@ -446,7 +446,7 @@ private:
           }
 
           if (!stopping_) {
-            emit(path_, Event::Error);
+            emit(path_, WatchedFileEvent::Error);
           }
           break;
         }
@@ -455,18 +455,18 @@ private:
           continue;
         }
 
-        Event result = Event::Modified;
+        WatchedFileEvent result = WatchedFileEvent::Modified;
 
         if (event.fflags & NOTE_DELETE) {
-          result = result | Event::Removed;
+          result = result | WatchedFileEvent::Removed;
         }
 
         if (event.fflags & NOTE_RENAME) {
-          result = result | Event::Renamed;
+          result = result | WatchedFileEvent::Renamed;
         }
 
         if (event.fflags & NOTE_ATTRIB) {
-          result = result | Event::Modified;
+          result = result | WatchedFileEvent::Modified;
         }
 
         emit(path_, result);
