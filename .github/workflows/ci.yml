@@ -58,7 +58,18 @@ jobs:
             # clang-tidy needs; the Visual Studio generator does not produce a
             # database clang-tidy can load. On Windows, set up the MSVC
             # environment first so CMake's Ninja generator picks cl instead of
-            # the MinGW gcc that ships with the runner image.
+            # the MinGW gcc that ships with the runner image. On macOS, build
+            # with the same compiler clang-tidy runs: brew's clang-tidy cannot
+            # resolve the libc++ headers recorded by Xcode's clang (the
+            # compile command carries no SDK sysroot), so every standard
+            # header would fail to load and flood the lint with cascading
+            # false positives.
+            - name: Point CMake at brew LLVM (macOS)
+              if: runner.os == 'macOS'
+              run: |
+                  echo "CC=$(brew --prefix llvm)/bin/clang" >> "$GITHUB_ENV"
+                  echo "CXX=$(brew --prefix llvm)/bin/clang++" >> "$GITHUB_ENV"
+
             - name: Set up MSVC environment
               if: runner.os == 'Windows'
               uses: ilammy/msvc-dev-cmd@v1

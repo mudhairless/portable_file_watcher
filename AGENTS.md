@@ -62,7 +62,12 @@ other formatter/typecheck step.
   with `-G Ninja` and `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` — the Visual Studio
   generator emits no database clang-tidy can load — and activates the MSVC
   environment (`ilammy/msvc-dev-cmd`) on Windows first so CMake picks `cl`
-  rather than the MinGW gcc shipped on the runner image.
+  rather than the MinGW gcc shipped on the runner image. macOS points `CC`/`CXX`
+  at brew's LLVM clang (`$(brew --prefix llvm)/bin/clang++`): brew's clang-tidy
+  cannot resolve the libc++ headers recorded by Xcode's clang in the database
+  (the compile command carries no SDK sysroot), which used to collapse every
+  standard header and flood the lint with cascades — `performance-enum-size`
+  even flagged the enum despite its `std::uint8_t` base.
 - `.clang-tidy` enables nearly all check groups with `WarningsAsErrors`, and
   `HeaderFilterRegex` means the header is analyzed too. Suppressions follow the
   `// NOLINTNEXTLINE(...)` convention already used throughout — match it.
@@ -86,4 +91,8 @@ other formatter/typecheck step.
   following `start()` are lost. Keep the no-read-in-flight-on-exit invariant when
   editing the worker loop: every exit path must have finished waiting on the
   pending read (`GetOverlappedResult`) before the buffer/completion event are
-  destroyed.
+  destroyed. The event buffer is allocated in `start()` and moved into the
+  worker (a `bad_alloc` must not escape the thread body), and everything after
+  the readiness handshake is guarded by a `try/catch` that reports
+  `WatchedFileEvent::Error` — keep the handshake (`ready.set_value`) outside
+  that guard or an early exception would deadlock `start()`.
