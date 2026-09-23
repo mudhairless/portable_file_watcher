@@ -29,5 +29,5 @@ endif()
 
 add_test(
     NAME portable_file_watcher_tests
-    COMMAND portable_file_watcher_tests
+    COMMAND $<TARGET_FILE:portable_file_watcher_tests>
 )

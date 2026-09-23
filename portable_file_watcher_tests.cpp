@@ -43,10 +43,12 @@ struct TestFailure {
   } while (false)
 
 struct EventLog {
+private:
   mutable std::mutex mutex;
   std::condition_variable condition;
   std::vector<pfw::Notification> notifications;
 
+public:
   void add(const pfw::Notification &notification) {
     {
       std::lock_guard<std::mutex> lock(mutex);

@@ -1,0 +1,78 @@
+name: CMake Tests and Clang-Tidy
+
+on:
+    push:
+        branches:
+            - main
+    pull_request:
+        branches:
+            - main
+
+jobs:
+    build-test-and-lint:
+        name: ${{ matrix.os }}
+        runs-on: ${{ matrix.os }}
+
+        strategy:
+            fail-fast: false
+            matrix:
+                os:
+                    - ubuntu-latest
+                    - windows-latest
+                    - macos-latest
+
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v4
+
+            # Install clang-tidy on Ubuntu
+            - name: Install clang-tidy on Ubuntu
+              if: runner.os == 'Linux'
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install --yes clang-tidy
+
+            # Install LLVM, including clang-tidy, on macOS
+            - name: Install clang-tidy on macOS
+              if: runner.os == 'macOS'
+              run: |
+                  brew install llvm
+                  echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+
+            # Install LLVM, including clang-tidy, on Windows
+            - name: Install clang-tidy on Windows
+              if: runner.os == 'Windows'
+              shell: pwsh
+              run: |
+                  choco install llvm --no-progress --yes
+                  Add-Content `
+                    -Path $env:GITHUB_PATH `
+                    -Value 'C:\Program Files\LLVM\bin'
+
+            - name: Show tool versions
+              run: |
+                  cmake --version
+                  clang-tidy --version
+
+            - name: Configure CMake
+              run: |
+                  cmake \
+                    -S . \
+                    -B build \
+                    -DCMAKE_BUILD_TYPE=Debug \
+                    -DCMAKE_CXX_STANDARD=17 \
+                    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+            - name: Build
+              run: cmake --build build --config Debug --parallel
+
+            - name: Run tests
+              run: ctest --test-dir build --build-config Debug --output-on-failure --parallel 2
+
+            - name: Run clang-tidy
+              run: |
+                  clang-tidy \
+                    -p build \
+                    portable_file_watcher_tests.hpp \
+                    portable_file_watcher_tests.cpp \
+                    --warnings-as-errors='*'
