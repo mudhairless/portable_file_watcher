@@ -373,128 +373,154 @@ bool PortableFileWatcher::start_windows() {
         FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE |
         FILE_NOTIFY_CHANGE_CREATION;
 
-    HANDLE completion_event = ::CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    if (completion_event == nullptr) {
-      ready.set_value(false);
-      return;
-    }
-
+    HANDLE completion_event = nullptr;
     OVERLAPPED overlapped{};
-    overlapped.hEvent = completion_event;
 
-    const auto issue_read = [&]() {
-      return ::ReadDirectoryChangesW(directory_handle_, buffer.data(),
-                                     static_cast<DWORD>(buffer.size()),
-                                     recursive_ ? TRUE : FALSE, notify_filter,
-                                     nullptr, &overlapped, nullptr);
+    // start() blocks on `ready` until the first read has been queued, so the
+    // promise is satisfied exactly once on every exit path. set_value can
+    // throw (MSVC's promise raises future_error on double satisfaction), so
+    // it is reached only through this guard, which swallows that (impossible)
+    // exception: nothing here may escape the thread body (std::terminate) or
+    // leave start() waiting forever on the future.
+    bool ready_reported = false;
+    const auto report_ready = [&](bool okay) {
+      if (!ready_reported) {
+        ready_reported = true;
+        try {
+          ready.set_value(okay);
+        } catch (...) { // NOLINT(bugprone-empty-catch)
+          // The promise can only throw future_error on a double satisfaction,
+          // which the ready_reported guard prevents; the watch is over either
+          // way.
+        }
+      }
     };
 
-    const BOOL first_ok = issue_read();
-    ready.set_value(first_ok != FALSE);
-
-    // Everything below allocates (event names, paths, the callback copy in
-    // emit), and an exception must never escape a std::thread body: that
-    // calls std::terminate. Report it the same way as the other watch-error
-    // paths. No read is in flight while events are processed: the pending
-    // read has already completed and the next one is queued only at the loop
-    // bottom, so exiting with an Error event rejoins the no-read-in-flight
-    // exit path.
+    // Event processing below allocates (event names, constructed paths) and
+    // uses calls that can throw (filesystem_error, system_error); an
+    // exception must never escape a std::thread body: that calls
+    // std::terminate. Report it the same way as the other watch-error paths.
+    // No read is in flight while events are processed: the pending read has
+    // already completed and the next one is queued only at the loop bottom,
+    // so exiting with an Error event rejoins the no-read-in-flight exit path.
     try {
-      if (!first_ok) {
-        if (!stopping_) {
-          emit(path_, WatchedFileEvent::Error);
-        }
+      completion_event = ::CreateEventW(nullptr, TRUE, FALSE, nullptr);
+      if (completion_event == nullptr) {
+        report_ready(false);
       } else {
-        for (;;) {
-          DWORD transferred = 0;
+        overlapped.hEvent = completion_event;
 
-          if (!::GetOverlappedResult(directory_handle_, &overlapped,
-                                     &transferred, TRUE)) {
-            // stop() cancels the pending read, completing it with
-            // ERROR_OPERATION_ABORTED; any other failure is a watch error.
-            // Either way the operation has finished, so nothing is in flight
-            // when the worker exits.
-            if (!stopping_ && ::GetLastError() != ERROR_OPERATION_ABORTED) {
-              emit(path_, WatchedFileEvent::Error);
-            }
-            break;
+        const auto issue_read = [&]() {
+          return ::ReadDirectoryChangesW(
+              directory_handle_, buffer.data(),
+              static_cast<DWORD>(buffer.size()), recursive_ ? TRUE : FALSE,
+              notify_filter, nullptr, &overlapped, nullptr);
+        };
+
+        const BOOL first_ok = issue_read();
+        report_ready(first_ok != FALSE);
+
+        if (!first_ok) {
+          if (!stopping_) {
+            emit(path_, WatchedFileEvent::Error);
           }
+        } else {
+          for (;;) {
+            DWORD transferred = 0;
 
-          // Manual-reset events stay signaled, so re-arm it for the next
-          // read. Changes that occur between reads are buffered by the
-          // kernel and returned with the next call, so nothing is lost.
-          if (!::ResetEvent(completion_event)) {
-            if (!stopping_) {
-              emit(path_, WatchedFileEvent::Error);
-            }
-            break;
-          }
-
-          if (transferred != 0) {
-            auto *record =
-                reinterpret_cast<FILE_NOTIFY_INFORMATION *>(buffer.data());
-
-            for (;;) {
-              const std::wstring name(record->FileName,
-                                      record->FileNameLength / sizeof(wchar_t));
-
-              auto changed = directory / name;
-              changed = std::filesystem::absolute(changed);
-
-              WatchedFileEvent event = WatchedFileEvent::None;
-
-              switch (record->Action) {
-              case FILE_ACTION_ADDED:
-                event = WatchedFileEvent::Created;
-                break;
-              case FILE_ACTION_REMOVED:
-                event = WatchedFileEvent::Removed;
-                break;
-              case FILE_ACTION_MODIFIED:
-                event = WatchedFileEvent::Modified;
-                break;
-              case FILE_ACTION_RENAMED_OLD_NAME:
-              case FILE_ACTION_RENAMED_NEW_NAME:
-                event = WatchedFileEvent::Renamed;
-                break;
-              default:
-                // Unrecognized action; leave the event as None so the
-                // any(event) check below filters it out.
-                break;
+            if (!::GetOverlappedResult(directory_handle_, &overlapped,
+                                       &transferred, TRUE)) {
+              // stop() cancels the pending read, completing it with
+              // ERROR_OPERATION_ABORTED; any other failure is a watch error.
+              // Either way the operation has finished, so nothing is in flight
+              // when the worker exits.
+              if (!stopping_ && ::GetLastError() != ERROR_OPERATION_ABORTED) {
+                emit(path_, WatchedFileEvent::Error);
               }
-
-              if (any(event) &&
-                  (std::filesystem::is_directory(path_) || changed == path_)) {
-                emit(changed, event);
-              }
-
-              if (record->NextEntryOffset == 0) {
-                break;
-              }
-
-              record = reinterpret_cast<FILE_NOTIFY_INFORMATION *>(
-                  reinterpret_cast<std::uint8_t *>(record) +
-                  record->NextEntryOffset);
+              break;
             }
-          }
 
-          // Queue the next read only while still running, and never break
-          // with a read in flight: its completion would write into this
-          // thread's stack after it has exited. stop() may have cancelled
-          // during event processing, in which case the loop re-checks here.
-          if (stopping_) {
-            break;
-          }
-
-          if (!issue_read()) {
-            if (!stopping_) {
-              emit(path_, WatchedFileEvent::Error);
+            // Manual-reset events stay signaled, so re-arm it for the next
+            // read. Changes that occur between reads are buffered by the
+            // kernel and returned with the next call, so nothing is lost.
+            if (!::ResetEvent(completion_event)) {
+              if (!stopping_) {
+                emit(path_, WatchedFileEvent::Error);
+              }
+              break;
             }
-            break;
+
+            if (transferred != 0) {
+              auto *record =
+                  reinterpret_cast<FILE_NOTIFY_INFORMATION *>(buffer.data());
+
+              for (;;) {
+                const std::wstring name(
+                    record->FileName, record->FileNameLength / sizeof(wchar_t));
+
+                auto changed = directory / name;
+                changed = std::filesystem::absolute(changed);
+
+                WatchedFileEvent event = WatchedFileEvent::None;
+
+                switch (record->Action) {
+                case FILE_ACTION_ADDED:
+                  event = WatchedFileEvent::Created;
+                  break;
+                case FILE_ACTION_REMOVED:
+                  event = WatchedFileEvent::Removed;
+                  break;
+                case FILE_ACTION_MODIFIED:
+                  event = WatchedFileEvent::Modified;
+                  break;
+                case FILE_ACTION_RENAMED_OLD_NAME:
+                case FILE_ACTION_RENAMED_NEW_NAME:
+                  event = WatchedFileEvent::Renamed;
+                  break;
+                default:
+                  // Unrecognized action; leave the event as None so the
+                  // any(event) check below filters it out.
+                  break;
+                }
+
+                if (any(event) && (std::filesystem::is_directory(path_) ||
+                                   changed == path_)) {
+                  emit(changed, event);
+                }
+
+                if (record->NextEntryOffset == 0) {
+                  break;
+                }
+
+                record = reinterpret_cast<FILE_NOTIFY_INFORMATION *>(
+                    reinterpret_cast<std::uint8_t *>(record) +
+                    record->NextEntryOffset);
+              }
+            }
+
+            // Queue the next read only while still running, and never break
+            // with a read in flight: its completion would write into this
+            // thread's stack after it has exited. stop() may have cancelled
+            // during event processing, in which case the loop re-checks here.
+            if (stopping_) {
+              break;
+            }
+
+            if (!issue_read()) {
+              if (!stopping_) {
+                emit(path_, WatchedFileEvent::Error);
+              }
+              break;
+            }
           }
         }
       }
     } catch (...) {
+      // Satisfy the handshake first so start() cannot block forever, then
+      // surface the failure like the other watch-error paths. report_ready
+      // swallows the only exception set_value can raise, so this handler
+      // cannot itself throw out of the thread.
+      report_ready(false);
       if (!stopping_) {
         emit(path_, WatchedFileEvent::Error);
       }
@@ -502,7 +528,9 @@ bool PortableFileWatcher::start_windows() {
 
     // Every exit path above has no read in flight, so the completion
     // event can be released and the thread can exit safely.
-    ::CloseHandle(completion_event);
+    if (completion_event != nullptr) {
+      ::CloseHandle(completion_event);
+    }
   });
 
   if (!ready_future.get()) {
@@ -699,17 +727,20 @@ void PortableFileWatcher::emit(const std::filesystem::path &changed,
                                WatchedFileEvent event) {
   Callback callback;
 
-  {
-    const std::lock_guard<std::mutex> lock(callback_mutex_);
-    callback = callback_;
-  }
-
-  if (callback && !stopping_) {
-    try {
-      callback(Notification{changed, event});
-    } catch (...) { // NOLINT(bugprone-empty-catch)
-      // Exceptions must not escape the watcher thread.
+  try {
+    {
+      const std::lock_guard<std::mutex> lock(callback_mutex_);
+      callback = callback_;
     }
+
+    if (callback && !stopping_) {
+      callback(Notification{changed, event});
+    }
+  } catch (...) { // NOLINT(bugprone-empty-catch)
+    // Nothing may escape the watcher thread: the mutex lock and the callback
+    // copy can throw, and the user hook runs on the watcher thread, so every
+    // failure is swallowed here. Watch failures are reported as Error events
+    // by the watch loop instead.
   }
 }
 

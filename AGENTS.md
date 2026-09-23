@@ -92,7 +92,14 @@ other formatter/typecheck step.
   editing the worker loop: every exit path must have finished waiting on the
   pending read (`GetOverlappedResult`) before the buffer/completion event are
   destroyed. The event buffer is allocated in `start()` and moved into the
-  worker (a `bad_alloc` must not escape the thread body), and everything after
-  the readiness handshake is guarded by a `try/catch` that reports
-  `WatchedFileEvent::Error` — keep the handshake (`ready.set_value`) outside
-  that guard or an early exception would deadlock `start()`.
+  worker (a `bad_alloc` must not escape the thread body). Everything in the
+  lambda after the buffer capture runs inside one `try/catch` that reports
+  `WatchedFileEvent::Error`, and the readiness handshake goes through the
+  `report_ready` guard (`bool ready_reported`), which is idempotent, swallows
+  `set_value`'s `future_error` (only reachable by double satisfaction, which the
+  guard prevents), and is invoked both inside the `try` and in the `catch` — so
+  an exception can neither escape the thread nor deadlock `start()`. `emit` is
+  likewise fully guarded (lock, callback copy, and user hook all inside one
+  `try/catch`): MSVC-STL clang-tidy (`bugprone-exception-escape`) sees inline
+  bodies with explicit `throw` in `<future>`/`<mutex>`, so any unguarded
+  `set_value` or `emit` call makes the worker lambda fail the Windows lint.

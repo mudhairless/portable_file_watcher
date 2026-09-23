@@ -24,6 +24,7 @@
 #include <string>
 #include <system_error>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #define PFW_IMPLEMENTATION
@@ -44,8 +45,15 @@ inline constexpr bool reports_child_events = true;
 inline constexpr bool reports_child_events = false;
 #endif
 
-struct TestFailure {
-  std::string message;
+struct TestFailure : std::exception {
+  explicit TestFailure(std::string message) : message_(std::move(message)) {}
+
+  const std::string &message() const { return message_; }
+
+  const char *what() const noexcept override { return message_.c_str(); }
+
+private:
+  std::string message_;
 };
 
 #define CHECK(condition)                                                       \
@@ -381,7 +389,7 @@ void run_test(const char *name, void (*test)()) {
     std::cout << "[       OK ] " << name << '\n';
   } catch (const TestFailure &failure) {
     std::cerr << "[  FAILED  ] " << name << '\n'
-              << "             " << failure.message << '\n';
+              << "             " << failure.message() << '\n';
     throw;
   } catch (const std::exception &exception) {
     std::cerr << "[  FAILED  ] " << name << '\n'
