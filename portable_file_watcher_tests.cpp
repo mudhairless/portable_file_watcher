@@ -12,7 +12,6 @@
 */
 
 #include <algorithm>
-#include <bits/chrono.h>
 #include <chrono>
 #include <condition_variable>
 #include <cstdlib>
@@ -64,7 +63,8 @@ public:
   bool
   wait_for(const std::function<bool(const std::vector<pfw::Notification> &)>
                &predicate,
-           std::chrono::milliseconds timeout = 5s) {
+           // NOLINTNEXTLINE(readability-magic-numbers)
+           std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
     std::unique_lock<std::mutex> lock(mutex);
 
     return condition.wait_for(lock, timeout, [&] {
