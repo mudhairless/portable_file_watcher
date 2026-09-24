@@ -103,3 +103,10 @@ other formatter/typecheck step.
   `try/catch`): MSVC-STL clang-tidy (`bugprone-exception-escape`) sees inline
   bodies with explicit `throw` in `<future>`/`<mutex>`, so any unguarded
   `set_value` or `emit` call makes the worker lambda fail the Windows lint.
+  The same check also reports the lambda's *closure type* — printed as
+  `(lambda at ...)`, matched as its implicit move constructor — when it descends
+  into the captured members' moves and finds throwing paths inside MSVC-STL
+  headers. That diagnostic is suppressed with a `NOLINTNEXTLINE(...,
+  bugprone-exception-escape)` on the `std::thread(...)` statement (see the
+  comment there); nothing can actually escape: the closure move happens on the
+  `start()` thread and the body runs inside the `try/catch`.

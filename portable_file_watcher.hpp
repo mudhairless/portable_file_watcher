@@ -370,7 +370,14 @@ bool PortableFileWatcher::start_windows() {
   constexpr DWORD buffer_size = 64 * 1024;
   std::vector<std::uint8_t> buffer(buffer_size);
 
-  // NOLINTNEXTLINE(readability-function-cognitive-complexity)
+  // MSVC's clang-tidy reports the worker lambda's implicitly-defaulted move
+  // constructor (printed as "(lambda at ...)") as throwing: it descends into
+  // the captured members' moves and finds throwing paths inside the MSVC-STL
+  // system headers. That cannot escape the thread -- the entire body runs
+  // inside the try/catch below, and the closure move happens on this thread in
+  // start(), so it surfaces like any other allocation failure. The check
+  // cannot see the guards on an implicit member, so suppress it.
+  // NOLINTNEXTLINE(readability-function-cognitive-complexity, bugprone-exception-escape)
   worker_ = std::thread([this, directory, ready = std::move(ready),
                          buffer = std::move(buffer)]() mutable {
     constexpr DWORD notify_filter =
