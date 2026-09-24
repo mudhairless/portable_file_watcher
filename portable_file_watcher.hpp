@@ -43,15 +43,12 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
-#include <cstddef>
+
 #include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <mutex>
 #include <thread>
-#include <utility>
-#include <vector>
 
 #ifdef _WIN32
 
@@ -63,7 +60,6 @@
 
 #elif defined(__linux__)
 
-#include <cerrno>
 #include <sys/inotify.h>
 #include <unistd.h>
 
@@ -109,12 +105,12 @@ inline constexpr int version =
 
 enum class WatchedFileEvent : std::uint8_t {
   None = 0,
-  Created = 1U << 0,
-  Modified = 1U << 1,
-  Removed = 1U << 2,
-  Renamed = 1U << 3,
-  Overflow = 1U << 4,
-  Error = 1U << 5
+  Created = 1U << 0U,
+  Modified = 1U << 1U,
+  Removed = 1U << 2U,
+  Renamed = 1U << 3U,
+  Overflow = 1U << 4U,
+  Error = 1U << 5U,
 };
 
 WatchedFileEvent operator|(WatchedFileEvent lhs, WatchedFileEvent rhs);
@@ -235,6 +231,15 @@ true
 // header. See the Usage comment at the top of the file.
 // -----------------------------------------------------------------------------
 #ifdef PFW_IMPLEMENTATION
+
+#include <chrono>
+#include <cstddef>
+#include <utility>
+#include <vector>
+
+#ifdef __linux__
+#include <cerrno>
+#endif
 
 // NOLINTBEGIN(misc-definitions-in-headers)
 namespace pfw {
@@ -712,6 +717,7 @@ bool PortableFileWatcher::start_kqueue() {
 
       emit(path_, result);
 
+      // NOLINTNEXTLINE(bugprone-signed-bitwise)
       if ((event.fflags & (NOTE_DELETE | NOTE_RENAME)) != 0) {
         break;
       }
